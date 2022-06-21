@@ -12,13 +12,21 @@ def denormalize(tensor, mean, std):
     return normalize(tensor, _mean, _std)
 
 class Denormalize(object):
-    def __init__(self, mean, std):
-        mean = np.array(mean)
-        std = np.array(std)
-        self._mean = -mean/std
-        self._std = 1/std
+    def __init__(self, mean, std, skip=False):
+        if skip:
+            self._mean = None
+            self._std = None
+            self.skip = True
+        else:
+            mean = np.array(mean)
+            std = np.array(std)
+            self._mean = -mean/std
+            self._std = 1/std
+            self.skip = False
 
     def __call__(self, tensor):
+        if self.skip:
+            return tensor
         if isinstance(tensor, np.ndarray):
             return (tensor - self._mean.reshape(-1,1,1)) / self._std.reshape(-1,1,1)
         return normalize(tensor, self._mean, self._std)
