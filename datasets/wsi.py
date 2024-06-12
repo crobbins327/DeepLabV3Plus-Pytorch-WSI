@@ -6,16 +6,18 @@ import numpy as np
 from collections import namedtuple
 import torch
 import cv2
-import albumentations as A
+# import albumentations as alb
 import pandas as pd
 import random
 import h5py
 import openslide
-import pyvips
+# import pyvips
 import math
 from torch.nn.functional import one_hot as oneHot
+import scipy.io as sio
 
-#----------------------------------------------------------------------------
+
+
 class WSIMaskDataset(Dataset):
     def __init__(self, 
                  args,
@@ -34,7 +36,8 @@ class WSIMaskDataset(Dataset):
                  make_all_pipelines = False,
                  unlabel_transform=None, 
                  # latent_dir=None, 
-                 is_label=True, 
+                 is_label=True,
+                 is_label_mat=False, 
                  phase='train',
                  mask_split_list = None,
                  aug=False, 
@@ -44,6 +47,7 @@ class WSIMaskDataset(Dataset):
 
         self.args = args
         self.is_label = is_label
+        self.is_label_mat = is_label_mat
         
         #Grayscale value of masks and corresponding classes, could load from json file
         # KIDCellClass = namedtuple('KIDCellClass', ['name', 'mask_value', 'id', 'train_id', 'category', 'category_id',
@@ -65,7 +69,7 @@ class WSIMaskDataset(Dataset):
         #     KIDCellClass('Tubule Nuclei', 235, 12, 9, 'Nuclei', 1, True, False, (130, 91, 37)),    
         #     ]
         
-        self.classes = classes
+        # self.classes = classes
         self.one_hot = one_hot
         
         #For preparing the masks to seg ID images
@@ -139,34 +143,35 @@ class WSIMaskDataset(Dataset):
         self.phase = phase
         self.aug = aug
         if aug == True:
-            self.aug_t = A.Compose([
-                            A.HorizontalFlip(p=0.5),
-                            A.VerticalFlip(p=0.5),
+            import albumentations as alb
+            self.aug_t = alb.Compose([
+                            alb.HorizontalFlip(p=0.5),
+                            alb.VerticalFlip(p=0.5),
                             #More conservative aug of rotating ever 90 degrees
-                            A.OneOf([
-                                A.RandomRotate90(p=1),
-                                A.Sequential([A.RandomRotate90(p=1),
-                                              A.RandomRotate90(p=1)], p=1),
-                                A.Sequential([A.RandomRotate90(p=1),
-                                              A.RandomRotate90(p=1),
-                                              A.RandomRotate90(p=1)], p=1),
+                            alb.OneOf([
+                                alb.RandomRotate90(p=1),
+                                alb.Sequential([alb.RandomRotate90(p=1),
+                                              alb.RandomRotate90(p=1)], p=1),
+                                alb.Sequential([alb.RandomRotate90(p=1),
+                                              alb.RandomRotate90(p=1),
+                                              alb.RandomRotate90(p=1)], p=1),
                                 ], p=0.75),
                             #The image is rotated in random angles 0 to 360deg. 
                             #May work fine because a lot of whitespace actually exists in core biopsies.
                             #However, I do not want the img generator to produce these images, just want the segmentation branch to learn from them
-                            A.ShiftScaleRotate(shift_limit=0.125,
+                            alb.ShiftScaleRotate(shift_limit=0.125,
                                                 scale_limit=0.2 * math.log(2),
                                                 rotate_limit=0,
                                                 border_mode=cv2.BORDER_REFLECT_101,
                                                 p=0.6),
-                            A.ShiftScaleRotate(shift_limit=0,
+                            alb.ShiftScaleRotate(shift_limit=0,
                                                scale_limit=0,
                                                rotate_limit=360,
                                                border_mode=cv2.BORDER_CONSTANT,
                                                value=[255,255,255],
                                                mask_value=0,
                                                p=0.75),
-                            A.ColorJitter(brightness=0.3,
+                            alb.ColorJitter(brightness=0.3,
                                           contrast=0.5 * math.log(2),
                                           saturation=0.18,
                                           hue=0.18,
@@ -183,6 +188,8 @@ class WSIMaskDataset(Dataset):
         
         if self.mask_split_list is not None:
             #Only load mask_files intersecting mask_split_list
+            # replace extension of mask_split_list with mask_exten
+            self.mask_split_list = [os.path.splitext(m)[0]+self.mask_exten for m in self.mask_split_list]
             mask_files = list(set(mask_files).intersection(self.mask_split_list))
             
             
@@ -562,7 +569,10 @@ class WSIMaskDataset(Dataset):
         else:
             img = self._load_patch(wsi, seg_level, coord, self.patch_size, dims=dims)
         
-        if self.is_label:
+        if self.is_label_mat:
+            mat_mask = sio.loadmat(os.path.join(self.mask_dir, mask_name))
+            return img, mat_mask
+        elif self.is_label:
             #Load label mask
             mask = np.array(Image.open(os.path.join(self.mask_dir, mask_name)).convert('L'))
             return img, mask
@@ -579,6 +589,8 @@ class WSIMaskDataset(Dataset):
         if self.is_label:
             img, mask = self._load_raw_image(idx, load_one=False)
             if (self.phase == 'train' or self.phase == 'train-val') and self.aug:
+                if self.is_label_mat:
+                    raise NotImplementedError('Augmentation not implemented for .mat masks')
                 augmented = self.aug_t(image=img, mask=mask)
                 aug_img_pil = Image.fromarray(augmented['image'])
                 # apply pixel-wise transformation
@@ -602,6 +614,11 @@ class WSIMaskDataset(Dataset):
                 #When phase is val, just preprocess image & mask normally
                 img_pil = Image.fromarray(img)
                 img_tensor = self.preprocess(img_pil)
+                if self.is_label_mat:
+                    return {
+                        'image': img_tensor,
+                        'mask': mask
+                    }
                 if self.one_hot:
                     mask_seg = torch.from_numpy(self._mask_seg(mask_np))
                     labels = self.makeOneHot(mask_seg)
