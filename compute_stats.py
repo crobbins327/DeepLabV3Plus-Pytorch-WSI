@@ -19,15 +19,17 @@ from metrics.stats_utils import (
     get_fast_dice_2,
     get_fast_pq,
     remap_label,
-    pair_coordinates
+    pair_coordinates,
 )
 
 
-def run_nuclei_type_stat(pred_dir, true_dir, type_uid_list=None, exhaustive=True, convert_val_class_dict=None, consolidate_classes_dict=None):
+def run_nuclei_type_stat(
+    pred_dir, true_dir, type_uid_list=None, exhaustive=True, convert_val_class_dict=None, consolidate_classes_dict=None
+):
     """GT must be exhaustively annotated for instance location (detection).
 
     Args:
-        true_dir, pred_dir: Directory contains .mat annotation for each image. 
+        true_dir, pred_dir: Directory contains .mat annotation for each image.
                             Each .mat must contain:
                     --`inst_centroid`: Nx2, contains N instance centroid
                                        of mass coordinates (X, Y)
@@ -38,7 +40,7 @@ def run_nuclei_type_stat(pred_dir, true_dir, type_uid_list=None, exhaustive=True
                         Default to `None` means available nuclei type in GT.
         exhaustive : Flag to indicate whether GT is exhaustively labelled
                      for instance types
-                     
+
     """
     file_list = glob.glob(os.path.join(pred_dir, "*.mat"))
     file_list.sort()  # ensure same order [1]
@@ -48,6 +50,8 @@ def run_nuclei_type_stat(pred_dir, true_dir, type_uid_list=None, exhaustive=True
     unpaired_pred_all = []  # the index must exist in `pred_inst_type_all` and unique
     true_inst_type_all = []  # each index is 1 independent data point
     pred_inst_type_all = []  # each index is 1 independent data point
+    true_idx_offset = 0
+    pred_idx_offset = 0
     for file_idx, filename in enumerate(file_list[:]):
         filename = os.path.basename(filename)
         basename = os.path.splitext(filename)[0]
@@ -90,18 +94,12 @@ def run_nuclei_type_stat(pred_dir, true_dir, type_uid_list=None, exhaustive=True
             pred_inst_type = np.array([0])
 
         # ! if take longer than 1min for 1000 vs 1000 pairing, sthg is wrong with coord
-        paired, unpaired_true, unpaired_pred = pair_coordinates(
-            true_centroid, pred_centroid, 12
-        )
+        paired, unpaired_true, unpaired_pred = pair_coordinates(true_centroid, pred_centroid, 12)
 
         # * Aggreate information
         # get the offset as each index represent 1 independent instance
-        true_idx_offset = (
-            true_idx_offset + true_inst_type_all[-1].shape[0] if file_idx != 0 else 0
-        )
-        pred_idx_offset = (
-            pred_idx_offset + pred_inst_type_all[-1].shape[0] if file_idx != 0 else 0
-        )
+        true_idx_offset += true_inst_type_all[-1].shape[0] if file_idx != 0 else 0
+        pred_idx_offset += pred_inst_type_all[-1].shape[0] if file_idx != 0 else 0
         true_inst_type_all.append(true_inst_type)
         pred_inst_type_all.append(pred_inst_type)
 
@@ -154,10 +152,9 @@ def run_nuclei_type_stat(pred_dir, true_dir, type_uid_list=None, exhaustive=True
 
         # f1_score = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0
 
-        f1_score = 2*tp_dt / (2*tp_dt + fp_tot + fn_tot) if tp_dt + fp_tot + fn_tot > 0 else 0
-        
-        return f1_score
+        f1_score = 2 * tp_dt / (2 * tp_dt + fp_tot + fn_tot) if tp_dt + fp_tot + fn_tot > 0 else 0
 
+        return f1_score
 
     # def _f1_type(paired_true, paired_pred, unpaired_true, unpaired_pred, type_id, w):
     #     type_samples = (paired_true == type_id) | (paired_pred == type_id)
@@ -278,8 +275,9 @@ def run_nuclei_inst_stat(pred_dir, true_dir, print_img_stats=False, ext=".mat"):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", type=str, default='KID-MP-10cell',
-                    choices=['KID-MP-10cell'], help='Name of training set')
+    parser.add_argument(
+        "--dataset", type=str, default="KID-MP-10cell", choices=["KID-MP-10cell"], help="Name of training set"
+    )
     parser.add_argument(
         "--mode",
         help="mode to run the measurement,"
@@ -289,31 +287,20 @@ if __name__ == "__main__":
         default="instance",
         const="instance",
     )
-    parser.add_argument(
-        "--pred_dir", help="point to output dir", nargs="?", default="", const=""
-    )
-    parser.add_argument(
-        "--true_dir", help="point to ground truth dir", nargs="?", default="", const=""
-    )
+    parser.add_argument("--pred_dir", help="point to output dir", nargs="?", default="", const="")
+    parser.add_argument("--true_dir", help="point to ground truth dir", nargs="?", default="", const="")
     args = parser.parse_args()
 
     classes = KIDCellDataset(args)
     convert_val_class_dict = classes.val_to_train_id_dict
-    consolidate_classes_dict = {
-        0 : 0,
-        1 : 1,
-        2 : 2,
-        3 : 2,
-        4 : 3,
-        5 : 4,
-        6 : 5,
-        7 : 6,
-        8 : 7,
-        9 : 2,
-        255 : 255
-    }
+    consolidate_classes_dict = {0: 0, 1: 1, 2: 2, 3: 2, 4: 3, 5: 4, 6: 5, 7: 6, 8: 7, 9: 2, 255: 255}
 
     if args.mode == "instance":
         run_nuclei_inst_stat(args.pred_dir, args.true_dir, print_img_stats=False)
     if args.mode == "type":
-        run_nuclei_type_stat(args.pred_dir, args.true_dir, convert_val_class_dict=convert_val_class_dict, consolidate_classes_dict=consolidate_classes_dict)
+        run_nuclei_type_stat(
+            args.pred_dir,
+            args.true_dir,
+            convert_val_class_dict=convert_val_class_dict,
+            consolidate_classes_dict=consolidate_classes_dict,
+        )

@@ -12,6 +12,7 @@ import pandas as pd
 
 
 from torch.utils import data
+
 # from datasets import WSIMaskDataset
 from torchvision import transforms as T
 
@@ -49,68 +50,71 @@ from preproc_dataset.mat_utils import nuclei_dict_from_mask, nuclei_dict_from_in
 import scipy.io as sio
 
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 def get_argparser():
     parser = argparse.ArgumentParser()
 
     # Datset Options
-    parser.add_argument("--dataset", type=str, default='KID-MP-10cell',
-                        choices=['KID-MP-10cell'], help='Name of training set')
-    parser.add_argument("--config_file", type=str, required=False, default=None,
-                        help="path to config file for processing")
-    parser.add_argument("--output", type=str, required=False, default=None,
-                        help="path to output directory")
-    parser.add_argument("--patch_size", type=int, required=False, default=512,
-                    help="patch size for segmenting patches")
-    parser.add_argument("--batch_size", type=int, required=False, default=64,
-                        help="batch size for segmenting patches")
-    
-    
-    # Deeplab Options
-    available_models = sorted(name for name in network.modeling.__dict__ if name.islower() and \
-                              not (name.startswith("__") or name.startswith('_')) and callable(
-                              network.modeling.__dict__[name])
-                              )
+    parser.add_argument(
+        "--dataset", type=str, default="KID-MP-10cell", choices=["KID-MP-10cell"], help="Name of training set"
+    )
+    parser.add_argument(
+        "--config_file", type=str, required=False, default=None, help="path to config file for processing"
+    )
+    parser.add_argument("--output", type=str, required=False, default=None, help="path to output directory")
+    parser.add_argument("--patch_size", type=int, required=False, default=512, help="patch size for segmenting patches")
+    parser.add_argument("--batch_size", type=int, required=False, default=64, help="batch size for segmenting patches")
 
-    parser.add_argument("--model", type=str, default='deeplabv3plus_resnet101',
-                        choices=available_models, help='model name')
-    
+    # Deeplab Options
+    available_models = sorted(
+        name
+        for name in network.modeling.__dict__
+        if name.islower()
+        and not (name.startswith("__") or name.startswith("_"))
+        and callable(network.modeling.__dict__[name])
+    )
+
+    parser.add_argument(
+        "--model", type=str, default="deeplabv3plus_resnet101", choices=available_models, help="model name"
+    )
+
     # keep these default values for KID-MP-10cell
-    parser.add_argument("--separable_conv", action='store_true', default=False,
-                        help="apply separable conv to decoder and aspp")
+    parser.add_argument(
+        "--separable_conv", action="store_true", default=False, help="apply separable conv to decoder and aspp"
+    )
     parser.add_argument("--output_stride", type=int, default=16, choices=[8, 16])
 
-    
-    parser.add_argument("--ckpt", default=None, type=str,
-                        help="checkpoint file for inference")
-    parser.add_argument("--gpu_id", type=str, default='0',
-                        help="GPU ID")
+    parser.add_argument("--ckpt", default=None, type=str, help="checkpoint file for inference")
+    parser.add_argument("--gpu_id", type=str, default="0", help="GPU ID")
     return parser
 
 
 def parse_config_dict(args, config_dict):
-	if args.save_exp_code is not None:
-		config_dict['exp_arguments']['save_exp_code'] = args.save_exp_code
-	if args.overlap is not None:
-		config_dict['patching_arguments']['overlap'] = args.overlap
-	if args.data_dir is not None:
-		config_dict['data_arguments']['data_dir'] = args.data_dir
-	if args.ckpt_path is not None:
-		config_dict['model_arguments']['ckpt_path'] = args.ckpt_path
-	return config_dict
+    if args.save_exp_code is not None:
+        config_dict["exp_arguments"]["save_exp_code"] = args.save_exp_code
+    if args.overlap is not None:
+        config_dict["patching_arguments"]["overlap"] = args.overlap
+    if args.data_dir is not None:
+        config_dict["data_arguments"]["data_dir"] = args.data_dir
+    if args.ckpt_path is not None:
+        config_dict["model_arguments"]["ckpt_path"] = args.ckpt_path
+    return config_dict
 
 
-def postprocess_cell_watershed_to_mat(seg_mask, 
-                                #   roi, 
-                                  max_connected_components=1000):
+def postprocess_cell_watershed_to_mat(
+    seg_mask,
+    #   roi,
+    max_connected_components=1000,
+):
     # combine all classes into one mask N X C x H x W -> N x 1 x H x W
     # if the mask has at least one non-zero value in C dimension, set it to 1
     # generic cell seg mask
-    cell_mask = torch.where(seg_mask > 0., 1., 0.)
+    cell_mask = torch.where(seg_mask > 0.0, 1.0, 0.0)
 
-    k_3x3 = torch.ones(3,3).to(device)
-    k_5x5 = torch.ones(5,5).to(device)
+    k_3x3 = torch.ones(3, 3).to(device)
+    k_5x5 = torch.ones(5, 5).to(device)
 
     # remove smaller dots
     opening = kornia.morphology.erosion(cell_mask, kernel=k_3x3)
@@ -130,13 +134,13 @@ def postprocess_cell_watershed_to_mat(seg_mask,
     dist_transform[dilate_dist == 0] = -1
     # these filters were designed from tinkering with the parameters, trial and error.
     # The idea is to find the local maxima and suppress the smaller noisy peaks with morphological operations
-    local_max = torch.where(dist_transform >= 0.7*dilate_dist, 1., 0.)
+    local_max = torch.where(dist_transform >= 0.7 * dilate_dist, 1.0, 0.0)
     local_max = kornia.morphology.dilation(local_max, kernel=k_5x5)
     local_max = kornia.morphology.erosion(local_max, kernel=k_5x5)
     local_max = kornia.morphology.erosion(local_max, kernel=k_3x3)
     local_max = kornia.morphology.dilation(local_max, kernel=k_5x5)
     sure_fg = local_max
-    
+
     unknown = sure_bg - sure_fg
 
     # determining how many connected components there are and labeling them with unique values for each N images
@@ -152,7 +156,7 @@ def postprocess_cell_watershed_to_mat(seg_mask,
         if len(unique_values) > max_connected_components:
             markers[n] = 0
             continue
-        
+
         # Map unique_values to their new indices
         markers_int[n] = inverse_indices.view(markers.shape[1], markers.shape[2], markers.shape[3])
 
@@ -256,7 +260,7 @@ def postprocess_cell_watershed_to_mat(seg_mask,
     # t2 = sure_bg.squeeze(1).cpu().numpy()[j] # HW
     # t3 = unknown.squeeze(1).cpu().numpy()[j] # HW
     # t3 = markers_int.squeeze(1).cpu().numpy()[j] # HW
-    
+
     # plt.figure(1)
     # plt.imshow(t1)
     # plt.figure(2)
@@ -280,22 +284,23 @@ def contour_classified_mask_batch(segmentation_masks, **kwargs):
 
     return contoured_images, batch_polygons
 
+
 def contour_classified_mask(segmentation_mask, remove_values=[-1, 0], generate_polygons=True):
     # Get unique classification values excluding the boundary value (-1)
     classification_values = np.unique(segmentation_mask)
     # remove values from the list
     classification_values = [value for value in classification_values if value not in remove_values]
-    
+
     # Create a blank image for drawing contours
     H, W = segmentation_mask.shape
     contoured_image = np.zeros((H, W, 3), dtype=np.uint8)
     image_polygons = []
-    
+
     # Iterate over each classification value
     for value in classification_values:
         # Create a binary mask for the current classification
         binary_mask = (segmentation_mask == value).astype(np.uint8)
-        
+
         # Find contours for the binary mask
         contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -314,11 +319,11 @@ def contour_classified_mask(segmentation_mask, remove_values=[-1, 0], generate_p
         # for contour in contours:
         cv2.drawContours(contoured_image, contours, -1, RGB_color, 4)
 
-    
     # select one channel for the grayscale image result
-    contoured_image = contoured_image[:,:,0]
+    contoured_image = contoured_image[:, :, 0]
 
     return contoured_image, image_polygons
+
 
 # for QuPath
 def create_geojson_result(polygons_per_image, classif_labels, coord_entries, geojson_output_path=None):
@@ -328,7 +333,7 @@ def create_geojson_result(polygons_per_image, classif_labels, coord_entries, geo
     for i, polygon_list in enumerate(polygons_per_image):
         # for each polygon in image, need to offset coordinates by the patch coordinates in coord_entries
         coord_entry = coord_entries[i]
-        x_offset, y_offset = coord_entry[0]['coords']
+        x_offset, y_offset = coord_entry[0]["coords"]
         for j, (polygon, classif) in enumerate(polygon_list):
             # get the class name
             class_entry = classif_labels[classif]
@@ -345,46 +350,49 @@ def create_geojson_result(polygons_per_image, classif_labels, coord_entries, geo
             coords = [(x + x_offset, y + y_offset) for x, y in poly_coords]
             # create the geojson Feature for QuPath
             feature = Feature(
-                            id="PathDetectionObject",
-                            geometry=Polygon(coords), 
-                            properties={
-                                'classification': {"name": class_name, "color": class_color}, 
-                                'isLocked': False, 
-                                'measurements': []
-                                }
-                            )
-            # feature = {'type': 'Feature', 
-                    #    'geometry': {'type': 'Polygon', 'coordinates': [list(coords)]},
-                    #    'properties': {'classification': class_name} 
-                    #    }
+                id="PathDetectionObject",
+                geometry=Polygon(coords),
+                properties={
+                    "classification": {"name": class_name, "color": class_color},
+                    "isLocked": False,
+                    "measurements": [],
+                },
+            )
+            # feature = {'type': 'Feature',
+            #    'geometry': {'type': 'Polygon', 'coordinates': [list(coords)]},
+            #    'properties': {'classification': class_name}
+            #    }
             # geojson_dict['features'].append(feature)
             geojson_polys.append(feature)
-    
+
     if geojson_output_path is not None:
-        print('saving geojson to: ', geojson_output_path)
-        with open(geojson_output_path, 'w') as f:
+        print("saving geojson to: ", geojson_output_path)
+        with open(geojson_output_path, "w") as f:
             f.write(geojson.dumps(geojson_polys, indent=4))
 
     return geojson_polys
 
 
 def collate_mat_masks(batch):
-	img = torch.cat([item["image"].unsqueeze(0) for item in batch], dim = 0)
-	mat_masks = [item["mask"] for item in batch]
-	return [img, mat_masks]
+    img = torch.cat([item["image"].unsqueeze(0) for item in batch], dim=0)
+    mat_masks = [item["mask"] for item in batch]
+    return [img, mat_masks]
+
 
 def main():
     opts = get_argparser().parse_args()
-    if opts.dataset.lower().startswith('kid-'):
+    if opts.dataset.lower().startswith("kid-"):
         classes = KIDCellDataset(opts)
         opts.num_classes = classes.num_classes
         decode_fn = classes.decode_target
         overlay_fn = classes.color_mask_overlay
     else:
         raise ValueError("Unknown dataset: %s" % opts.dataset)
-    
+
     # load the split_df and select the test set column
-    split_df = pd.read_csv("E:/Applikate/Kidney-DeepLearning/cell-segmentation/DeepLabv3_results/KID-MP-10cell_512_resnet101/0.7train-0.15val-0.15test_split27.csv")
+    split_df = pd.read_csv(
+        "E:/Applikate/Kidney-DeepLearning/cell-segmentation/DeepLabv3_results/KID-MP-10cell_512_resnet101/0.7train-0.15val-0.15test_split27.csv"
+    )
     test_df = split_df["test_split"]
     # remove nan
     test_df = test_df.dropna()
@@ -397,45 +405,50 @@ def main():
     process_list = "E:\Applikate\Kidney-DeepLearning\Patch_coords-512\KID-patch_seg-level_process_list.csv"
     # rescale_mpp = True
     desired_mpp = 0.2
-    wsi_exten = ['.tif','.svs']
-    mask_exten = '.mat'
+    wsi_exten = [".tif", ".svs"]
+    mask_exten = ".mat"
 
-    test_dst = WSIMaskDataset(opts, wsi_dir, coord_dir, mask_dir, classes=classes.classes, 
-                                 process_list = process_list,
-                                 wsi_exten=wsi_exten, mask_exten=mask_exten, 
-                                 rescale_mpp=True, desired_mpp=desired_mpp, 
-                                 is_label=True,
-                                 is_label_mat=True,
-                                 phase='val',
-                                 mask_split_list=test_df.to_list(),
-                                 aug=False, 
-                                 resolution=512,
-                                 one_hot=False,
-                                 make_all_pipelines=False)
-    
-    test_loader = data.DataLoader(
-        test_dst, batch_size=64, shuffle=False, 
-        num_workers=1, collate_fn=collate_mat_masks)
+    test_dst = WSIMaskDataset(
+        opts,
+        wsi_dir,
+        coord_dir,
+        mask_dir,
+        classes=classes.classes,
+        process_list=process_list,
+        wsi_exten=wsi_exten,
+        mask_exten=mask_exten,
+        rescale_mpp=True,
+        desired_mpp=desired_mpp,
+        is_label=True,
+        is_label_mat=True,
+        phase="val",
+        mask_split_list=test_df.to_list(),
+        aug=False,
+        resolution=512,
+        one_hot=False,
+        make_all_pipelines=False,
+    )
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = opts.gpu_id
+    test_loader = data.DataLoader(test_dst, batch_size=64, shuffle=False, num_workers=1, collate_fn=collate_mat_masks)
+
+    os.environ["CUDA_VISIBLE_DEVICES"] = opts.gpu_id
     # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print("Device: %s" % device)
 
-    
     # preprocessing transform for input patches
     # transform = T.Compose([
     #         T.ToTensor(),
     #     ])
-    
+
     # Set up model (all models are 'constructed at network.modeling)
     model = network.modeling.__dict__[opts.model](num_classes=opts.num_classes, output_stride=opts.output_stride)
-    if opts.separable_conv and 'plus' in opts.model:
+    if opts.separable_conv and "plus" in opts.model:
         network.convert_to_separable_conv(model.classifier)
     utils.set_bn_momentum(model.backbone, momentum=0.01)
-    
+
     if opts.ckpt is not None and os.path.isfile(opts.ckpt):
         # https://github.com/VainF/DeepLabV3Plus-Pytorch/issues/8#issuecomment-605601402, @PytaichukBohdan
-        checkpoint = torch.load(opts.ckpt, map_location=torch.device('cpu'))
+        checkpoint = torch.load(opts.ckpt, map_location=torch.device("cpu"))
         model.load_state_dict(checkpoint["model_state"])
         model = nn.DataParallel(model)
         model.to(device)
@@ -451,27 +464,26 @@ def main():
             images, gt_mats = seg_data[0], seg_data[1]
             images = images.to(device)
             batch_mask = model(images).max(1)[1].unsqueeze(1)
-            batch_postproc = postprocess_cell_watershed_to_mat(batch_mask, 
-                                                        #    images
-                                                           )
+            batch_postproc = postprocess_cell_watershed_to_mat(
+                batch_mask,
+                #    images
+            )
             for j, (pred_mat, gt_mat) in enumerate(zip(batch_postproc, gt_mats)):
                 #  reconstruct name as wsi_name + _coord + x +, + y + _ds + ds
-                if pred_mat['inst_map'].max() > 2**16-1:
+                if pred_mat["inst_map"].max() > 2**16 - 1:
                     # print('Warning: too many instances in patch, truncating to 65535')
-                    raise ValueError('Too many instances in patch')
-                pred_mat['inst_map'] = pred_mat['inst_map'].astype(np.uint16)
-                pred_mat['class_map'] = pred_mat['class_map'].astype(np.uint8)
-                wsi_name = gt_mat['wsiname'][0]
-                x = gt_mat['x'][0][0]
-                y = gt_mat['y'][0][0]
-                ds = gt_mat['ds'][0]
+                    raise ValueError("Too many instances in patch")
+                pred_mat["inst_map"] = pred_mat["inst_map"].astype(np.uint16)
+                pred_mat["class_map"] = pred_mat["class_map"].astype(np.uint8)
+                wsi_name = gt_mat["wsiname"][0]
+                x = gt_mat["x"][0][0]
+                y = gt_mat["y"][0][0]
+                ds = gt_mat["ds"][0]
                 mat_name = f"{wsi_name}_coord{x},{y}_ds{ds}.mat"
                 mat_path = os.path.join(pred_dir, mat_name)
                 print(f"Saving {mat_path}")
                 sio.savemat(mat_path, pred_mat)
 
 
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

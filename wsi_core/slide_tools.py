@@ -6,6 +6,7 @@ Methods to work with slides, after being opened using slide_io
 import os
 import pyvips
 import numpy as np
+
 # import colour
 from matplotlib import colormaps
 import re
@@ -21,52 +22,46 @@ TYPE_SLIDE_NAME = "slide"
 BG_AUTO_FILL_STR = "auto"
 
 NUMPY_FORMAT_VIPS_DTYPE = {
-    'uint8': 'uchar',
-    'int8': 'char',
-    'uint16': 'ushort',
-    'int16': 'short',
-    'uint32': 'uint',
-    'int32': 'int',
-    'float32': 'float',
-    'float64': 'double',
-    'complex64': 'complex',
-    'complex128': 'dpcomplex',
-    }
-
-
-VIPS_FORMAT_NUMPY_DTYPE = {
-    'uchar': np.uint8,
-    'char': np.int8,
-    'ushort': np.uint16,
-    'short': np.int16,
-    'uint': np.uint32,
-    'int': np.int32,
-    'float': np.float32,
-    'double': np.float64,
-    'complex': np.complex64,
-    'dpcomplex': np.complex128,
+    "uint8": "uchar",
+    "int8": "char",
+    "uint16": "ushort",
+    "int16": "short",
+    "uint32": "uint",
+    "int32": "int",
+    "float32": "float",
+    "float64": "double",
+    "complex64": "complex",
+    "complex128": "dpcomplex",
 }
 
 
-NUMPY_FORMAT_BF_DTYPE = {'uint8': 'uint8',
-                         'int8': 'int8',
-                         'uint16': 'uint16',
-                         'int16': 'int16',
-                         'uint32': 'uint32',
-                         'int32': 'int32',
-                         'float32': 'float',
-                         'float64': 'double'}
+VIPS_FORMAT_NUMPY_DTYPE = {
+    "uchar": np.uint8,
+    "char": np.int8,
+    "ushort": np.uint16,
+    "short": np.int16,
+    "uint": np.uint32,
+    "int": np.int32,
+    "float": np.float32,
+    "double": np.float64,
+    "complex": np.complex64,
+    "dpcomplex": np.complex128,
+}
+
+
+NUMPY_FORMAT_BF_DTYPE = {
+    "uint8": "uint8",
+    "int8": "int8",
+    "uint16": "uint16",
+    "int16": "int16",
+    "uint32": "uint32",
+    "int32": "int32",
+    "float32": "float",
+    "float64": "double",
+}
 
 # See slide_io.bf_to_numpy_dtype
-BF_DTYPE_PIXEL_TYPE = {'uint8':1,
-                       'int8': 0,
-                       'uint16': 3,
-                       'int16': 2,
-                       'uint32': 5,
-                       'int32': 4,
-                       'float': 6,
-                       'double': 7
-                       }
+BF_DTYPE_PIXEL_TYPE = {"uint8": 1, "int8": 0, "uint16": 3, "int16": 2, "uint32": 5, "int32": 4, "float": 6, "double": 7}
 
 CZI_FORMAT_NUMPY_DTYPE = {
     "gray8": "uint8",
@@ -78,10 +73,9 @@ CZI_FORMAT_NUMPY_DTYPE = {
     "invalid": "uint8",
 }
 
-CZI_FORMAT_TO_BF_FORMAT = {k:NUMPY_FORMAT_BF_DTYPE[v] for k,v in CZI_FORMAT_NUMPY_DTYPE.items()}
+CZI_FORMAT_TO_BF_FORMAT = {k: NUMPY_FORMAT_BF_DTYPE[v] for k, v in CZI_FORMAT_NUMPY_DTYPE.items()}
 
-BF_FORMAT_NUMPY_DTYPE = {v:k for k, v in NUMPY_FORMAT_BF_DTYPE.items()}
-
+BF_FORMAT_NUMPY_DTYPE = {v: k for k, v in NUMPY_FORMAT_BF_DTYPE.items()}
 
 
 def vips2numpy(vi):
@@ -91,10 +85,10 @@ def vips2numpy(vi):
     """
     try:
         img = vi.numpy()
-    except:
-        img = np.ndarray(buffer=vi.write_to_memory(),
-                        dtype=VIPS_FORMAT_NUMPY_DTYPE[vi.format],
-                        shape=[vi.height, vi.width, vi.bands])
+    except Exception as e:
+        img = np.ndarray(
+            buffer=vi.write_to_memory(), dtype=VIPS_FORMAT_NUMPY_DTYPE[vi.format], shape=[vi.height, vi.width, vi.bands]
+        )
         if vi.bands == 1:
             img = img[..., 0]
 
@@ -102,9 +96,7 @@ def vips2numpy(vi):
 
 
 def numpy2vips(a, pyvips_interpretation=None):
-    """
-
-    """
+    """ """
     try:
         vi = pyvips.Image.new_from_array(a)
 
@@ -117,11 +109,10 @@ def numpy2vips(a, pyvips_interpretation=None):
 
         linear = a.reshape(width * height * bands)
         if linear.dtype.byteorder == ">":
-            #vips seems to expect the array to be little endian, but `a` is big endian
+            # vips seems to expect the array to be little endian, but `a` is big endian
             linear.byteswap(inplace=True)
 
-        vi = pyvips.Image.new_from_memory(linear.data, width, height, bands,
-                                        NUMPY_FORMAT_VIPS_DTYPE[a.dtype.name])
+        vi = pyvips.Image.new_from_memory(linear.data, width, height, bands, NUMPY_FORMAT_VIPS_DTYPE[a.dtype.name])
 
         if pyvips_interpretation is not None:
             vi = vi.copy(interpretation=pyvips_interpretation)
@@ -148,6 +139,7 @@ def get_name(f):
 
     return img_name
 
+
 def get_slide_extension(src_f):
     """Get slide format
 
@@ -173,7 +165,6 @@ def get_slide_extension(src_f):
     return slide_format
 
 
-
 def get_img_type(img_f):
     """Determine if file is a slide or an image
 
@@ -194,10 +185,9 @@ def get_img_type(img_f):
     if os.path.isdir(img_f):
         return kind
 
-
     f_extension = get_slide_extension(img_f)
 
-    if f_extension.lower() == '.ds_store':
+    if f_extension.lower() == ".ds_store":
         return kind
     # what_img = imghdr.what(img_f)
 
@@ -211,7 +201,7 @@ def get_img_type(img_f):
             # with valtils.HiddenPrints():
             pil_image = Image.open(img_f)
             can_use_pil = True
-        except:
+        except Exception as e:
             pass
 
     can_use_vips = slide_io.check_to_use_vips(img_f)
@@ -262,7 +252,11 @@ def determine_if_staining_round(src_dir):
         master_img_f = None
     else:
 
-        f_list = [os.path.join(src_dir, f) for f in os.listdir(src_dir) if get_img_type(os.path.join(src_dir, f)) is not None and not f.startswith(".")]
+        f_list = [
+            os.path.join(src_dir, f)
+            for f in os.listdir(src_dir)
+            if get_img_type(os.path.join(src_dir, f)) is not None and not f.startswith(".")
+        ]
         extensions = [get_slide_extension(f) for f in f_list]
         format_counts = Counter(extensions)
         format_count_values = list(format_counts.values())
@@ -280,9 +274,8 @@ def determine_if_staining_round(src_dir):
 
 
 def um_to_px(um, um_per_px):
-    """Conver mircon to pixel
-    """
-    return um * 1/um_per_px
+    """Conver mircon to pixel"""
+    return um * 1 / um_per_px
 
 
 # def warp_slide(src_f, transformation_src_shape_rc, transformation_dst_shape_rc,

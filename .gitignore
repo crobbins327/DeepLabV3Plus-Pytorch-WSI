@@ -9,3 +9,5 @@ results
 checkpoints_bak
 cityscapes
 test_results
+*.pth
+*.h5

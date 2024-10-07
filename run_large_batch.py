@@ -2,16 +2,22 @@ import subprocess
 import shutil
 import os
 
+
 def run_predict_wsi(input_dir, dataset, model, ckpt_path, separable_conv=False):
     # Build the command line arguments
     args = [
-        "python", "predict_wsi.py",
-        "--input", input_dir,
-        "--dataset", dataset,
-        "--model", model,
-        "--ckpt", ckpt_path
+        "python",
+        "predict_wsi.py",
+        "--input",
+        input_dir,
+        "--dataset",
+        dataset,
+        "--model",
+        model,
+        "--ckpt",
+        ckpt_path,
     ]
-    
+
     if separable_conv:
         args.append("--separable_conv")
 
@@ -21,11 +27,12 @@ def run_predict_wsi(input_dir, dataset, model, ckpt_path, separable_conv=False):
 
     # Run the subprocess
     result = subprocess.run(args)
-    
+
     # Output the result
     print("Output:", result.stdout)
     print("Errors:", result.stderr)
     print("Return Code:", result.returncode)
+
 
 # Example usage
 batch_cases = [
@@ -36,7 +43,7 @@ batch_cases = [
     "D:\\Applikate\\Kidney-DeepLearning\\KID-MED-031",
     "D:\\Applikate\\Kidney-DeepLearning\\KID-MED-034",
     "D:\\Applikate\\Kidney-DeepLearning\\KID-MED-036",
-    "D:\\Applikate\\Kidney-DeepLearning\\KID-MED-037_s50"
+    "D:\\Applikate\\Kidney-DeepLearning\\KID-MED-037_s50",
 ]
 
 # for b in batch_cases:
